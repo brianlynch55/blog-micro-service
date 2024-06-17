@@ -1,15 +1,12 @@
-import { DataSource } from "typeorm";
-import { Blog } from "../entity/Blog";
 import { Post } from "../entity/Post";
 import redisClient from "../config/redis";
+import { IBlogRepository } from "../interfaces/IBlogRepository";
 
 class BlogService {
-  private blogRepository;
-  private postRepository;
+  private blogRepository: IBlogRepository;
 
-  constructor(dataSource: DataSource) {
-    this.blogRepository = dataSource.getRepository(Blog);
-    this.postRepository = dataSource.getRepository(Post);
+  constructor(blogRepository: IBlogRepository) {
+    this.blogRepository = blogRepository;
   }
 
   async createBlog({
@@ -19,40 +16,54 @@ class BlogService {
   }: {
     name: string;
     slug: string;
-    posts?: Partial<Post>[];
+    posts?: Post[];
   }) {
-    const blog = this.blogRepository.create({ name, slug, posts });
-    await redisClient.del(`blog:${slug}`);
-    return await this.blogRepository.save(blog);
+    const blog = await this.blogRepository.createAndSaveBlog({
+      name,
+      slug,
+      posts: posts ? posts : [],
+    });
+
+    await Promise.all([
+      redisClient.del(`blog:${slug}:includePosts:true`),
+      redisClient.del(`blog:${slug}:includePosts:false`),
+    ]);
+
+    return blog;
   }
 
   async addPost(
     slug: string,
     { title, content }: { title?: string; content: string }
   ) {
-    const blog = await this.blogRepository.findOne({ where: { slug } });
+    const blog = await this.blogRepository.findBySlug(slug);
     if (!blog) throw new Error("Blog not found");
 
-    const post = this.postRepository.create({ title, content, blog });
-    await redisClient.del(`blog:${slug}`);
-    return await this.postRepository.save(post);
+    const post = await this.blogRepository.createAndSavePost({
+      title,
+      content,
+      blog,
+    });
+
+    // Invalidate cache for both cases of includePosts
+    await Promise.all([
+      redisClient.del(`blog:${slug}:includePosts:true`),
+      redisClient.del(`blog:${slug}:includePosts:false`),
+    ]);
+
+    return post;
   }
 
   async getBlog(slug: string, includePosts: boolean) {
     const cacheKey = `blog:${slug}:includePosts:${includePosts}`;
-    if (redisClient) {
-      const cachedBlog = await redisClient.get(cacheKey);
+    const cachedBlog = await redisClient.get(cacheKey);
 
-      if (cachedBlog) {
-        console.log("returning cached result");
-        return JSON.parse(cachedBlog);
-      }
+    if (cachedBlog) {
+      console.log("Returning cached result");
+      return JSON.parse(cachedBlog);
     }
 
-    const blog = await this.blogRepository.findOne({
-      where: { slug },
-      relations: includePosts ? ["posts"] : [],
-    });
+    const blog = await this.blogRepository.findBySlug(slug, includePosts);
 
     if (blog) {
       await redisClient.set(cacheKey, JSON.stringify(blog), {

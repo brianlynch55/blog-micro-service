@@ -1,12 +1,14 @@
 import { Request, Response } from "express";
 import { DataSource } from "typeorm";
 import BlogService from "../services/BlogService";
+import { BlogRepository } from "../repositories/BlogRepository";
 
 class BlogController {
   blogService: BlogService;
 
   constructor(dataSource: DataSource) {
-    this.blogService = new BlogService(dataSource);
+    const blogRepository = new BlogRepository(dataSource);
+    this.blogService = new BlogService(blogRepository);
   }
 
   createBlog = async (req: Request, res: Response): Promise<void> => {

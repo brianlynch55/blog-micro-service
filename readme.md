@@ -205,6 +205,8 @@ One trade-off was the added complexity of using TypeORM and Redis. While these t
 
 Create an abstract data access layer and implement specific repositories for each database. The service layer would interact with this abstraction, ensuring the application logic remains database-agnostic.
 
+- **Implementated in second commit**
+
 ### How would you deploy the architecture you designed in a production-ready way?
 
 - **Containerization**: Use Docker to containerize the application.

@@ -1,33 +1,21 @@
-import { DataSource } from "typeorm";
-import { mock, instance, when } from "ts-mockito";
-import BlogService from "./BlogService";
 import { Blog } from "../entity/Blog";
 import { Post } from "../entity/Post";
+import BlogService from "./BlogService";
+import { IBlogRepository } from "../interfaces/IBlogRepository";
 
 jest.mock("../config/redis");
 
 describe("BlogService Tests", () => {
-  let dataSourceMock: DataSource;
+  let blogRepositoryMock: jest.Mocked<IBlogRepository>;
   let blogService: BlogService;
-  let blogRepositoryMock: any;
-  let postRepositoryMock: any;
 
   beforeEach(() => {
-    dataSourceMock = mock(DataSource);
     blogRepositoryMock = {
-      findOne: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
+      createAndSaveBlog: jest.fn(),
+      createAndSavePost: jest.fn(),
+      findBySlug: jest.fn(),
     };
-    postRepositoryMock = {
-      create: jest.fn(),
-      save: jest.fn(),
-    };
-
-    when(dataSourceMock.getRepository(Blog)).thenReturn(blogRepositoryMock);
-    when(dataSourceMock.getRepository(Post)).thenReturn(postRepositoryMock);
-
-    blogService = new BlogService(instance(dataSourceMock));
+    blogService = new BlogService(blogRepositoryMock);
   });
 
   test("createBlog successfully creates a blog", async () => {
@@ -38,18 +26,16 @@ describe("BlogService Tests", () => {
     blog.slug = blogData.slug;
     blog.posts = blogData.posts;
 
-    blogRepositoryMock.create.mockReturnValue(blog);
-    blogRepositoryMock.save.mockResolvedValue(blog);
+    blogRepositoryMock.createAndSaveBlog.mockResolvedValue(blog);
 
     const result = await blogService.createBlog(blogData);
 
-    expect(blogRepositoryMock.create).toHaveBeenCalledWith(blogData);
-    expect(blogRepositoryMock.save).toHaveBeenCalledWith(blog);
+    expect(blogRepositoryMock.createAndSaveBlog).toHaveBeenCalledWith(blogData);
     expect(result).toEqual(blog);
   });
 
   test("addPost throws error if blog not found", async () => {
-    blogRepositoryMock.findOne.mockResolvedValue(undefined);
+    blogRepositoryMock.findBySlug.mockResolvedValue(null);
     await expect(
       blogService.addPost("nonexistent-slug", {
         title: "Test Post",
@@ -73,17 +59,16 @@ describe("BlogService Tests", () => {
     post.blog = blog;
     post.viewCount = 0;
 
-    blogRepositoryMock.findOne.mockResolvedValue(blog);
-    postRepositoryMock.create.mockReturnValue(post);
-    postRepositoryMock.save.mockResolvedValue(post);
+    blogRepositoryMock.findBySlug.mockResolvedValue(blog);
+    blogRepositoryMock.createAndSavePost.mockResolvedValue(post);
 
     const result = await blogService.addPost(blog.slug, postData);
 
-    expect(postRepositoryMock.create).toHaveBeenCalledWith({
+    expect(blogRepositoryMock.findBySlug).toHaveBeenCalledWith(blog.slug);
+    expect(blogRepositoryMock.createAndSavePost).toHaveBeenCalledWith({
       ...postData,
       blog,
     });
-    expect(postRepositoryMock.save).toHaveBeenCalledWith(post);
     expect(result).toEqual(post);
   });
 
@@ -94,14 +79,11 @@ describe("BlogService Tests", () => {
     blog.slug = "test-blog";
     blog.posts = [];
 
-    blogRepositoryMock.findOne.mockResolvedValue(blog);
+    blogRepositoryMock.findBySlug.mockResolvedValue(blog);
 
     const result = await blogService.getBlog(blog.slug, false);
 
-    expect(blogRepositoryMock.findOne).toHaveBeenCalledWith({
-      where: { slug: blog.slug },
-      relations: [],
-    });
+    expect(blogRepositoryMock.findBySlug).toHaveBeenCalledWith(blog.slug, false);
     expect(result).toEqual(blog);
   });
 
@@ -112,14 +94,11 @@ describe("BlogService Tests", () => {
     blog.slug = "int-test-blog";
     blog.posts = [];
 
-    blogRepositoryMock.findOne.mockResolvedValue(blog);
+    blogRepositoryMock.findBySlug.mockResolvedValue(blog);
 
     const result = await blogService.getBlog(blog.slug, true);
 
-    expect(blogRepositoryMock.findOne).toHaveBeenCalledWith({
-      where: { slug: blog.slug },
-      relations: ["posts"],
-    });
+    expect(blogRepositoryMock.findBySlug).toHaveBeenCalledWith(blog.slug, true);
     expect(result).toEqual(blog);
   });
 });
